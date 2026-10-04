@@ -1,0 +1,108 @@
+name: 构建 Android APK
+
+# 为什么要有这个文件：
+# 打包 APK 需要 JDK 21 + Android SDK 36 + Gradle，本地一个都没有（这台机器只有 Node 和 Python）。
+# 与其让你去装几 GB 的 Android Studio，不如把编译交给 GitHub 的服务器 —— 推一次代码就出一个 APK。
+#
+# ★ 关键：不能直接跑 gradlew。
+#   Capacitor 生成的 android/.gitignore 把这几样排除在版本控制之外：
+#     app/src/main/assets/public/          网页本体
+#     app/src/main/assets/capacitor.plugins.json   插件注册表
+#     app/src/main/assets/capacitor.config.json
+#     capacitor-cordova-android-plugins/   Cordova 兼容层
+#   而 android/capacitor.settings.gradle 又把插件模块指向 ../node_modules/@capacitor/*/android。
+#   所以必须先 npm ci + cap sync 把它们生成出来，否则 Gradle 找不到模块、APK 里也没有网页。
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:        # 也可以在 Actions 页面手动点「Run workflow」
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # AGP 8.13 要求 JDK 17+，Gradle 8.14 支持到 JDK 24。
+      # capacitor.build.gradle 里写死了 sourceCompatibility VERSION_21，所以必须用 21。
+      - name: 安装 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: 安装 Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 安装 npm 依赖
+        run: npm ci
+
+      # 生成被 .gitignore 排除的那些文件：assets/public、capacitor.plugins.json、
+      # capacitor-cordova-android-plugins、以及各插件的 Gradle 模块声明
+      - name: 同步 Capacitor 资源与插件
+        run: npx cap sync android
+
+      - name: 确保 gradlew 可执行
+        working-directory: android
+        # Windows 上生成的工程 gradlew 通常没有可执行位，Linux runner 直接跑会报 Permission denied
+        run: chmod +x ./gradlew
+
+      # ---------- 调试版 APK：不需要签名密钥，直接能装 ----------
+      - name: 构建调试版 APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: 上传调试版 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: 课表-调试版-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      # ---------- 正式版 APK：只有配了签名密钥才会跑 ----------
+      - name: 检查签名密钥是否已配置
+        id: ks
+        run: |
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "present=true" >> $GITHUB_OUTPUT
+          else
+            echo "present=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 还原签名密钥
+        if: steps.ks.outputs.present == 'true'
+        working-directory: android
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
+          cat > keystore.properties <<EOF
+          storeFile=release.keystore
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          EOF
+
+      - name: 构建正式版 APK
+        if: steps.ks.outputs.present == 'true'
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: 上传正式版 APK
+        if: steps.ks.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: 课表-正式版-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      - name: 提示
+        if: steps.ks.outputs.present != 'true'
+        run: |
+          echo "::notice::本次只构建了调试版 APK。要出正式版，请在仓库 Secrets 里配置 KEYSTORE_BASE64 / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD。"
