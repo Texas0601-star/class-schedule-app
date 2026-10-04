@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"></meta-data>
+        </provider>
+    </application>
+
+    <!-- Permissions -->
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      上课提醒所需权限。
+      POST_NOTIFICATIONS        Android 13+ 弹通知必须申请，否则通知被系统静默丢弃。
+      SCHEDULE_EXACT_ALARM      Android 12/13 用精确闹钟（上课时间差一分钟都不行）。
+                                用户可在系统设置里关掉，关掉后退化为不精确闹钟（可能延迟几分钟）。
+      USE_EXACT_ALARM           Android 14+ 的精确闹钟权限。仅限闹钟/日历类应用声明，
+                                课表应用属于此类。若不希望上架 Google Play 被审查，可删掉这一条，
+                                只保留 SCHEDULE_EXACT_ALARM 并引导用户手动授权。
+      RECEIVE_BOOT_COMPLETED    重启后重新注册闹钟，否则重启一次提醒就全没了。
+      VIBRATE                   通知震动。
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+</manifest>
