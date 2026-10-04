@@ -1,0 +1,17 @@
+{
+  "appId": "com.kbschedule.app",
+  "appName": "我的课表",
+  "webDir": "www",
+  "backgroundColor": "#F4F5F8",
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": true
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_icon",
+      "iconColor": "#4F6DF5"
+    }
+  }
+}
