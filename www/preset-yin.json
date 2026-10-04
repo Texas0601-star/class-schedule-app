@@ -1,0 +1,116 @@
+{
+  "title": "殷志峰的课表 · 凯里学院 2026-2027-1",
+  "settings": {
+    "startDate": "2026-08-31",
+    "totalWeeks": 20,
+    "days": [1, 2, 3, 4, 5, 6],
+    "notifyEnabled": false,
+    "notifyAhead": 15,
+    "sections": [
+      { "n": 1, "label": "1-2",  "start": "08:20", "end": "09:55" },
+      { "n": 2, "label": "3-4",  "start": "10:10", "end": "11:45" },
+      { "n": 3, "label": "5-6",  "start": "14:00", "end": "15:35" },
+      { "n": 4, "label": "7-8",  "start": "15:50", "end": "17:25" },
+      { "n": 5, "label": "9-10", "start": "19:00", "end": "20:35" }
+    ]
+  },
+  "courses": [
+    {
+      "id": "c1", "name": "高等数学1", "teacher": "刘建明", "location": "", "color": "#4F6DF5",
+      "sessions": [
+        { "day": 2, "start": 1, "end": 1, "weeks": "1-16", "parity": 0, "room": "微2402" },
+        { "day": 4, "start": 2, "end": 2, "weeks": "1-16", "parity": 0, "room": "微2403" }
+      ]
+    },
+    {
+      "id": "c2", "name": "大学物理1", "teacher": "郑付友", "location": "", "color": "#E0574E",
+      "sessions": [
+        { "day": 3, "start": 1, "end": 1, "weeks": "1-16", "parity": 0, "room": "微2402" },
+        { "day": 1, "start": 2, "end": 2, "weeks": "1-16", "parity": 0, "room": "微2402" }
+      ]
+    },
+    {
+      "id": "c3", "name": "人工智能通识课", "teacher": "邹友发", "location": "微1402", "color": "#12A594",
+      "sessions": [
+        { "day": 4, "start": 1, "end": 1, "weeks": "6-13", "parity": 0, "room": "微1402" }
+      ]
+    },
+    {
+      "id": "c4", "name": "自动化专业导论", "teacher": "王德元", "location": "微3401", "color": "#F59E0B",
+      "sessions": [
+        { "day": 5, "start": 1, "end": 1, "weeks": "6-13", "parity": 0, "room": "微3401" }
+      ]
+    },
+    {
+      "id": "c5", "name": "思想道德与法治", "teacher": "曾云燕", "location": "", "color": "#8B5CF6",
+      "sessions": [
+        { "day": 2, "start": 2, "end": 2, "weeks": "1-16", "parity": 0, "room": "教3205" },
+        { "day": 4, "start": 5, "end": 5, "weeks": "1-15", "parity": 1, "room": "教22205" }
+      ]
+    },
+    {
+      "id": "c6", "name": "大学物理实验", "teacher": "陈广萍,潘南南,红,张娟,付明安,王春燕", "location": "未排地点", "color": "#EC4899",
+      "sessions": [
+        { "day": 3, "start": 2, "end": 2, "weeks": "5-16", "parity": 0, "room": "未排地点" }
+      ]
+    },
+    {
+      "id": "c7", "name": "大学英语1", "teacher": "熊松荣", "location": "教42205", "color": "#0EA5E9",
+      "sessions": [
+        { "day": 5, "start": 2, "end": 2, "weeks": "1-16", "parity": 0, "room": "教42205" }
+      ]
+    },
+    {
+      "id": "c8", "name": "军事理论", "teacher": "孙子健", "location": "微1502", "color": "#65A30D",
+      "sessions": [
+        { "day": 6, "start": 2, "end": 2, "weeks": "1-16", "parity": 0, "room": "微1502" }
+      ]
+    },
+    {
+      "id": "c9", "name": "计算机应用基础", "teacher": "彭志勇", "location": "实2313", "color": "#F97316",
+      "sessions": [
+        { "day": 1, "start": 3, "end": 3, "weeks": "1-16", "parity": 0, "room": "实2313" }
+      ]
+    },
+    {
+      "id": "c10", "name": "羽毛球选项", "teacher": "张露", "location": "篮球副馆（羽毛球场）", "color": "#14B8A6",
+      "sessions": [
+        { "day": 2, "start": 3, "end": 3, "weeks": "1-16", "parity": 0, "room": "篮球副馆（羽毛球场）" }
+      ]
+    },
+    {
+      "id": "c11", "name": "生态文明教育", "teacher": "樊传慧", "location": "微2402", "color": "#65A30D",
+      "sessions": [
+        { "day": 3, "start": 3, "end": 3, "weeks": "6-13", "parity": 0, "room": "微2402" }
+      ]
+    },
+    {
+      "id": "c12", "name": "数字素养通识课", "teacher": "彭志勇", "location": "实2313", "color": "#14B8A6",
+      "sessions": [
+        { "day": 4, "start": 3, "end": 3, "weeks": "2-16", "parity": 2, "room": "实2313" }
+      ]
+    },
+    {
+      "id": "c13", "name": "中华民族共同体概论", "teacher": "潘琴", "location": "微2401", "color": "#F59E0B",
+      "sessions": [
+        { "day": 1, "start": 4, "end": 4, "weeks": "1-16", "parity": 0, "room": "微2401" }
+      ]
+    },
+    {
+      "id": "c14", "name": "形势与政策", "teacher": "唐晓梅", "location": "教42205", "color": "#8B5CF6",
+      "sessions": [
+        { "day": 2, "start": 4, "end": 4, "weeks": "8-11", "parity": 0, "room": "教42205" }
+      ]
+    },
+    {
+      "id": "c15", "name": "职业生涯规划", "teacher": "罗愉程", "location": "微2402", "color": "#EC4899",
+      "sessions": [
+        { "day": 4, "start": 4, "end": 4, "weeks": "9-16", "parity": 0, "room": "微2402" }
+      ]
+    },
+    {
+      "id": "c16", "name": "专业认知实习", "teacher": "彭利华", "location": "无", "color": "#64748B",
+      "sessions": []
+    }
+  ]
+}
