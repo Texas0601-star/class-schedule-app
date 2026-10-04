@@ -1,0 +1,27 @@
+# 依赖
+node_modules/
+
+# Gradle / 构建产物
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.iml
+.gradle/
+
+# 签名密钥 —— 绝对不能提交
+*.jks
+*.keystore
+keystore.properties
+
+# 系统垃圾
+.DS_Store
+Thumbs.db
+
+# 图标验收对比图（本地看一眼就够，不用进仓库）
+icon-check.png
+
+# 注意：www/ 和 android/ 都要提交。
+#   www/      —— CI 里没有 ../class-schedule，必须自带
+#   android/  —— Capacitor 的标准做法，平台目录入库，图标/清单改动才留得住
