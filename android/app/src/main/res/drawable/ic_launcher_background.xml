@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自适应图标的背景层。用 XML 渐变而不是位图，任何屏幕密度都不用换图。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="315"
+        android:startColor="#4F6DF5"
+        android:endColor="#7A5CF0"
+        android:type="linear" />
+</shape>
