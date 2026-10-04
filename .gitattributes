@@ -1,0 +1,23 @@
+# 统一换行符 —— 这类项目在 Windows 上编辑、在 Linux CI 上构建，
+# 不锁死的话 shell 脚本会带 \r，Linux 执行直接报 bad interpreter。
+* text=auto eol=lf
+
+# 二进制资源别动
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.keystore binary
+*.jks binary
+*.jar binary
+*.apk binary
+*.aab binary
+
+# Gradle wrapper 必须是 LF，否则 CI 上 ./gradlew 无法执行
+gradlew text eol=lf
+gradlew.bat text eol=crlf
+*.sh text eol=lf
+
+# Windows 批处理保留 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
