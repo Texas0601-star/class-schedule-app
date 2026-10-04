@@ -32,6 +32,17 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 button{cursor:pointer}
 .hide{display:none!important}
 
+/* 导入面板的粘贴框。等宽字体，方便用户核对表头对齐情况。 */
+.imp-textarea{
+  width:100%;min-height:130px;max-height:240px;resize:vertical;
+  background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:11px 13px;font-size:13px;line-height:1.6;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color:var(--txt);box-sizing:border-box;
+}
+.imp-textarea::placeholder{color:var(--txt3);font-family:inherit}
+.imp-textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+
 /* ============ 布局 ============ */
 #app{display:flex;flex-direction:column;height:100vh;height:100dvh}
 .page{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(76px + var(--safe-b))}
@@ -461,8 +472,8 @@ button{cursor:pointer}
       <div class="sec-title">数据</div>
       <div class="card">
         <div class="card-bd" style="display:flex;flex-direction:column;gap:10px">
+          <button class="btn line full" id="btn-import">导入课表（JSON / CSV / 粘贴）</button>
           <button class="btn line full" id="btn-export">导出备份（JSON）</button>
-          <button class="btn line full" id="btn-import">导入备份（JSON）</button>
           <button class="btn line full" id="btn-demo">载入示例课表</button>
           <button class="btn danger full" id="btn-clear">清空全部数据</button>
         </div>
@@ -505,6 +516,7 @@ button{cursor:pointer}
   <div class="sheet" id="sheet"></div>
 </div>
 <input type="file" id="file-input" accept=".json,application/json" class="hide">
+<input type="file" id="import-file-input" accept=".json,.csv,.txt,.tsv,application/json,text/csv,text/plain" class="hide">
 <div id="toast"></div>
 
 <script>
@@ -1748,20 +1760,43 @@ $("#btn-export").addEventListener("click",async()=>{
   const ok = await download("课表备份_"+fmtISO(new Date())+".json", JSON.stringify(S,null,2), "application/json");
   if(ok) toast(NATIVE.on ? "备份已生成，在分享面板里选择保存位置" : "备份文件已导出");
 });
-$("#btn-import").addEventListener("click",()=>$("#file-input").click());
+$("#btn-import").addEventListener("click",openImportSheet);
+
+/* 导入面板里「选择文件」走这条。文件读完就填进 textarea，
+   让用户能先看一眼内容、确认无误再点导入，而不是读完直接覆盖。 */
+$("#import-file-input").addEventListener("change",e=>{
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = ()=>{
+    const ta = $("#imp-text");
+    if(ta){
+      ta.value = r.result;
+      const msg = $("#imp-msg");
+      if(msg){ msg.textContent = "已读取：" + f.name; msg.style.color = "var(--txt2)"; }
+    }else{
+      // 面板已关（极端时序）：退化成直接导入
+      try{
+        const res = parseScheduleText(r.result);
+        if(res){ const d = commitImport(res,false); toast("已导入 "+res.count+" 门课程"); }
+        else toast("文件格式不正确，导入失败");
+      }catch(err){ toast("文件格式不正确，导入失败"); }
+    }
+  };
+  r.readAsText(f, "UTF-8");
+  e.target.value = "";
+});
+
+/* 旧的 JSON 导入通道保留着：导出备份 → 再导入时走这条，直接整体恢复。
+   字段兼容由 parseScheduleText 统一处理，所以这里也走同一套解析。 */
 $("#file-input").addEventListener("change",e=>{
   const f=e.target.files[0]; if(!f) return;
   const r=new FileReader();
   r.onload=()=>{
     try{
-      const o=JSON.parse(r.result);
-      if(!o||typeof o!=="object") throw new Error("bad");
-      const d=defaultState();
-      o.settings=Object.assign({},d.settings,o.settings||{});
-      if(!Array.isArray(o.settings.sections)||!o.settings.sections.length) o.settings.sections=d.settings.sections;
-      if(!Array.isArray(o.courses)) o.courses=[];
-      S=o; save(); viewWeek=currentWeek(); renderAll(); scheduleNotifications();
-      toast("已导入 "+S.courses.length+" 门课程");
+      const res = parseScheduleText(r.result);
+      if(!res) throw new Error("bad");
+      const dropped = commitImport(res, false);
+      toast("已导入 "+res.count+" 门课程"+(dropped?"（跳过 "+dropped+" 个越界课次）":""));
     }catch(err){ toast("文件格式不正确，导入失败"); }
     e.target.value="";
   };
@@ -1808,6 +1843,402 @@ async function setupNativeChrome(){
       });
     }catch(e){}
   }
+}
+
+/* ==================================================================
+   课表文件导入
+   ------------------------------------------------------------------
+   教务系统各家格式都不一样，没法只认一种。这里的策略是「先归一化，再合并」：
+
+     原始输入 ──► 探测格式 ──► 解析成 entries[] ──► 归并成 courses[]
+      (JSON/CSV/粘贴文本)          (扁平记录)         (按课程名分组)
+
+   中间用 entries[] 这层扁平结构，是因为大多数教务导出都是「一行 = 一次课」，
+   而我们的数据模型是「一门课 = 多个课次」。多一层中转，各种格式都往同一个
+   口子塞，后面的归并逻辑只写一遍。
+   ================================================================== */
+
+/* 星期写法归一。教务系统里 周一/星期一/Mon/1 都可能出现。 */
+const WEEKDAY_MAP = {
+  "一":1,"二":2,"三":3,"四":4,"五":5,"六":6,"日":7,"天":7,
+  "1":1,"2":2,"3":3,"4":4,"5":5,"6":6,"7":7,
+  "mon":1,"tue":2,"wed":3,"thu":4,"fri":5,"sat":6,"sun":7,
+  "monday":1,"tuesday":2,"wednesday":3,"thursday":4,"friday":5,"saturday":6,"sunday":7
+};
+
+function parseDay(v){
+  if(v==null) return 0;
+  let s = String(v).trim().toLowerCase();
+  if(!s) return 0;
+  s = s.replace(/^(星期|周|礼拜)/,"").replace(/^(week|wk)/,"").replace(/day$/,"");
+  return WEEKDAY_MAP[s] || 0;
+}
+
+/* 节次归一：把 "1-2" / "第1,2节" / "0102" / [1,2] 都变成 {start,end} */
+function parseSections(v){
+  if(v==null) return null;
+  if(Array.isArray(v)){
+    const nums = v.map(x=>parseInt(x,10)).filter(n=>!isNaN(n));
+    if(!nums.length) return null;
+    return { start:Math.min.apply(null,nums), end:Math.max.apply(null,nums) };
+  }
+  let s = String(v).trim();
+  if(!s) return null;
+  // 去掉「第」「节」等修饰
+  s = s.replace(/第/g,"").replace(/节/g,"").replace(/\[|\]|\(|\)/g,"");
+  // 连字符形式：1-2 / 1~2 / 1—2 / 1,2
+  const m = s.match(/(\d+)\s*[-~—,、]\s*(\d+)/);
+  if(m) return { start:+m[1], end:+m[2] };
+  // 纯数字。注意 "0102" 这种紧凑写法（教务系统常见）要拆成 01 / 02
+  if(/^\d{4}$/.test(s)) return { start:+s.slice(0,2), end:+s.slice(2) };
+  const one = s.match(/^(\d+)$/);
+  if(one) return { start:+one[1], end:+one[1] };
+  return null;
+}
+
+/* 周次归一：把 "1-16" / "1-16周" / "1,3,5" / "1-16(单)" 变成 {weeks, parity}
+   ★ 名字带 Range 是为了和上面既有的 parseWeeks（字符串→数组）区分开。
+     两者同名会被函数提升覆盖，把 sessionsOn / 课次编辑等既有调用全打坏。 */
+function parseWeeksRange(v){
+  if(v==null) return { weeks:"", parity:0 };
+  if(Array.isArray(v)){
+    const nums = v.map(x=>parseInt(x,10)).filter(n=>!isNaN(n));
+    if(!nums.length) return { weeks:"", parity:0 };
+    return { weeks: nums.length===1 ? String(nums[0]) : (Math.min.apply(null,nums)+"-"+Math.max.apply(null,nums)), parity:0 };
+  }
+  const raw = String(v).trim();
+  if(!raw) return { weeks:"", parity:0 };
+  // 复用既有实现：单双周判定与周次展开都交给它们，避免两套口径
+  const parity = parseParity(raw);
+  const arr = parseWeeks(raw);
+  if(!arr.length){
+    // parseWeeks 不吃四位数紧凑写法（如 "0116"），这里兜一下
+    const compact = raw.replace(/[^\d]/g,"");
+    if(/^\d{3,4}$/.test(compact)){
+      const a = +compact.slice(0,2), b = +compact.slice(2);
+      if(a>=1 && b>=a) return { weeks:a+"-"+b, parity:parity };
+    }
+    return { weeks:"", parity:parity };
+  }
+  return { weeks: fmtWeeks(arr), parity:parity };
+}
+
+/* CSV/TSV 解析。不用 split(",") 是因为课程名里可能带逗号且有引号包裹。 */
+function parseDelimited(text){
+  const firstLine = text.split(/\r?\n/)[0]||"";
+  const delim = firstLine.indexOf("\t")>=0 ? "\t"
+              : (firstLine.split(",").length >= firstLine.split(";").length ? "," : ";");
+  const rows = [];
+  let row = [], cell = "", quoted = false;
+  for(let i=0;i<text.length;i++){
+    const ch = text[i];
+    if(quoted){
+      if(ch==='"'){ if(text[i+1]==='"'){ cell+='"'; i++; } else quoted=false; }
+      else cell += ch;
+    }else{
+      if(ch==='"') quoted = true;
+      else if(ch===delim){ row.push(cell); cell=""; }
+      else if(ch==="\n"){ row.push(cell); rows.push(row); row=[]; cell=""; }
+      else if(ch==="\r"){ /* 忽略 */ }
+      else cell += ch;
+    }
+  }
+  if(cell!==""||row.length){ row.push(cell); rows.push(row); }
+  return rows.filter(r=>r.some(c=>String(c).trim()!==""));
+}
+
+/* 表头别名映射。同一含义不同教务系统叫法不同，这里做归一。 */
+const FIELD_ALIAS = {
+  name:    ["课程名称","课程名","课程","科目","name","course","coursename","subject","教学班名称"],
+  teacher: ["教师","任课教师","老师","授课教师","teacher","instructor","主讲教师"],
+  room:    ["教室","上课地点","地点","上课教室","room","location","classroom","上课地点 "],
+  day:     ["星期","周几","上课星期","day","weekday"],
+  section: ["节次","上课节次","时间","节","section","period","time"],
+  weeks:   ["周次","上课周次","周数","weeks","weekrange","week_range"],
+  start:   ["开始节次","起始节","start","startsection","begin"],
+  end:     ["结束节次","终止节","end","endsection"],
+  campus:  ["校区","campus"],
+  classNo: ["班号","教学班","班级","class"]
+};
+
+function matchField(header, key){
+  const h = String(header).trim().toLowerCase().replace(/\s/g,"");
+  return FIELD_ALIAS[key].some(a => h === a.toLowerCase() || h.indexOf(a.toLowerCase())>=0);
+}
+
+/* 从二维表（CSV 或粘贴的表格文本）抽出 entries */
+function entriesFromTable(rows){
+  if(rows.length<2) return [];
+  // 找表头行：前 5 行里，字段命中数最多的那行
+  let headerIdx = 0, bestHit = -1;
+  for(let i=0; i<Math.min(5,rows.length); i++){
+    let hit = 0;
+    rows[i].forEach(cell=>{
+      for(const k in FIELD_ALIAS) if(matchField(cell,k)) { hit++; break; }
+    });
+    if(hit>bestHit){ bestHit = hit; headerIdx = i; }
+  }
+  if(bestHit<=0) return [];   // 没有可识别的表头
+
+  const headers = rows[headerIdx];
+  const col = {};
+  // 两轮匹配，避免宽泛字段抢走具体字段的列。
+  // 反面教材：「结束节次」既含「节次」（section 别名）又含「结束节次」（end 别名），
+  // 按对象键顺序遍历时 section 先命中，结果 end 列丢失、3-4 节被解析成 3-3 节。
+  // 所以第一轮只认「完全相等」，第二轮才允许「包含」。
+  const norm = s => String(s).trim().toLowerCase().replace(/\s/g,"");
+  headers.forEach((h,i)=>{
+    const hn = norm(h);
+    for(const k in FIELD_ALIAS){
+      if(col[k]!==undefined) continue;
+      if(FIELD_ALIAS[k].some(a => norm(a) === hn)){ col[k]=i; return; }
+    }
+  });
+  headers.forEach((h,i)=>{
+    const hn = norm(h);
+    for(const k in FIELD_ALIAS){
+      if(col[k]!==undefined) continue;
+      if(FIELD_ALIAS[k].some(a => hn.indexOf(norm(a)) >= 0)){ col[k]=i; return; }
+    }
+  });
+
+  const out = [];
+  for(let r=headerIdx+1; r<rows.length; r++){
+    const row = rows[r];
+    const get = k => col[k]===undefined ? "" : String(row[col[k]]==null?"":row[col[k]]).trim();
+    const nm = get("name");
+    if(!nm) continue;
+
+    const day = parseDay(get("day"));
+    if(!day) continue;                       // 没有星期就没法排课
+
+    // 节次：优先 start/end 两列，其次合并的 section 列
+    let secs = null;
+    const st = get("start"), en = get("end");
+    if(st||en){
+      const a = parseInt(st,10), b = parseInt(en,10)||a;
+      if(!isNaN(a)) secs = { start:a, end:isNaN(b)?a:b };
+    }
+    if(!secs) secs = parseSections(get("section"));
+    if(!secs) continue;                      // 没有节次也没法排
+
+    const { weeks, parity } = parseWeeksRange(get("weeks"));
+    out.push({
+      name: nm,
+      teacher: get("teacher"),
+      room: get("room") || get("campus"),
+      day: day,
+      start: secs.start,
+      end: secs.end,
+      weeks: weeks,
+      parity: parity
+    });
+  }
+  return out;
+}
+
+/* JSON 转 entries。字段名可能各式各样，靠别名映射兜。 */
+function entriesFromJsonObject(o){
+  // ① 已经是我们自己的格式 —— 直接用
+  if(Array.isArray(o.courses) && o.courses.length && o.courses[0] && Array.isArray(o.courses[0].sessions)){
+    return { direct:o };
+  }
+  // ② 找数组型数据源
+  let arr = null;
+  for(const k of ["data","list","courses","rows","items","result","kbList","kb_list","records"]){
+    if(Array.isArray(o[k])){ arr = o[k]; break; }
+  }
+  if(!arr && Array.isArray(o)) arr = o;
+  if(!arr) return null;
+
+  const out = [];
+  arr.forEach(item=>{
+    if(!item || typeof item!=="object") return;
+    // 取键值，键名做别名匹配
+    const pick = keys => {
+      for(const key of Object.keys(item)){
+        const kk = String(key).trim().toLowerCase().replace(/\s/g,"");
+        if(keys.some(a=>kk===a.toLowerCase()||kk.indexOf(a.toLowerCase())>=0)) return item[key];
+      }
+      return "";
+    };
+    const name = String(pick(FIELD_ALIAS.name) || "").trim();
+    if(!name) return;
+    const day = parseDay(pick(FIELD_ALIAS.day));
+    if(!day) return;
+    let secs = null;
+    const st = pick(FIELD_ALIAS.start), en = pick(FIELD_ALIAS.end);
+    if(st!=null && String(st).trim()!==""){
+      const a = parseInt(st,10), b = parseInt(en,10)||a;
+      if(!isNaN(a)) secs = { start:a, end:isNaN(b)?a:b };
+    }
+    if(!secs) secs = parseSections(pick(FIELD_ALIAS.section));
+    if(!secs) return;
+    const { weeks, parity } = parseWeeksRange(pick(FIELD_ALIAS.weeks));
+    out.push({
+      name: name,
+      teacher: String(pick(FIELD_ALIAS.teacher)||"").trim(),
+      room: String(pick(FIELD_ALIAS.room)||"").trim(),
+      day: day, start: secs.start, end: secs.end, weeks: weeks, parity: parity
+    });
+  });
+  return out.length ? out : null;
+}
+
+/* 把扁平 entries 归并成 courses。同一门课的多次课合并 sessions。 */
+function entriesToCourses(entries){
+  const byName = {};
+  const order = [];
+  entries.forEach(e=>{
+    const key = e.name;
+    if(!byName[key]){
+      byName[key] = {
+        id: uid(), name: e.name, teacher: e.teacher||"", location: e.room||"",
+        color: PALETTE[order.length % PALETTE.length], sessions: []
+      };
+      order.push(key);
+    }
+    const c = byName[key];
+    if(!c.teacher && e.teacher) c.teacher = e.teacher;
+    // 去重：同一天同一节次同一周次，不重复添加
+    const dup = c.sessions.some(s =>
+      s.day===e.day && s.start===e.start && s.end===e.end &&
+      (s.weeks||"")===(e.weeks||"") && (s.parity||0)===(e.parity||0)
+    );
+    if(dup) return;
+    c.sessions.push({
+      day: e.day, start: e.start, end: e.end,
+      weeks: e.weeks || "1-"+S.settings.totalWeeks,
+      room: e.room || "",
+      parity: e.parity || 0
+    });
+  });
+  return order.map(k=>byName[k]);
+}
+
+/* 统一入口：把任意文本解析成可导入的课表对象，失败返回 null */
+function parseScheduleText(text){
+  const trimmed = String(text||"").trim();
+  if(!trimmed) return null;
+
+  // JSON 优先
+  if(trimmed[0]==="{" || trimmed[0]==="["){
+    try{
+      const o = JSON.parse(trimmed);
+      const r = entriesFromJsonObject(o);
+      if(!r) return null;
+      if(r.direct) return { mode:"native", data:r.direct, count:r.direct.courses.length };
+      const courses = entriesToCourses(r);
+      if(!courses.length) return null;
+      return { mode:"parsed", courses: courses, count: courses.length };
+    }catch(e){ /* 不是 JSON，继续往下试 */ }
+  }
+
+  // 表格文本（CSV/TSV/粘贴的教务网页表格）
+  const rows = parseDelimited(trimmed);
+  const entries = entriesFromTable(rows);
+  if(entries.length){
+    const courses = entriesToCourses(entries);
+    return { mode:"parsed", courses: courses, count: courses.length };
+  }
+  return null;
+}
+
+/* 真正落地导入。keepExisting=true 时与现有课程合并，否则整体替换。 */
+function commitImport(result, keepExisting){
+  if(result.mode==="native"){
+    const d = defaultState();
+    const o = result.data;
+    o.settings = Object.assign({}, d.settings, o.settings||{});
+    if(!Array.isArray(o.settings.sections)||!o.settings.sections.length) o.settings.sections = d.settings.sections;
+    if(!Array.isArray(o.courses)) o.courses = [];
+    if(keepExisting && S.courses.length){
+      // 按课程名去重合并
+      const names = {};
+      S.courses.forEach(c=>names[c.name]=c);
+      o.courses.forEach(c=>{ if(!names[c.name]) S.courses.push(c); });
+      S.settings = Object.assign({}, o.settings, { startDate:S.settings.startDate, totalWeeks:S.settings.totalWeeks });
+    }else{
+      S = o;
+    }
+  }else{
+    if(keepExisting && S.courses.length){
+      const names = {};
+      S.courses.forEach(c=>names[c.name]=c);
+      result.courses.forEach(c=>{
+        if(names[c.name]){
+          // 同名课程：补上缺的课次
+          const ex = names[c.name];
+          c.sessions.forEach(s=>{
+            const dup = ex.sessions.some(x=>x.day===s.day&&x.start===s.start&&x.end===s.end&&x.weeks===s.weeks&&(x.parity||0)===(s.parity||0));
+            if(!dup) ex.sessions.push(s);
+          });
+        }else{
+          S.courses.push(c);
+        }
+      });
+    }else{
+      S.courses = result.courses;
+    }
+  }
+  // 把超出当前节次表的节次号剔掉，否则渲染会错位
+  const maxN = S.settings.sections.length;
+  let dropped = 0;
+  S.courses.forEach(c=>{
+    const before = c.sessions.length;
+    c.sessions = c.sessions.filter(s => s.start>=1 && s.start<=maxN && s.end>=s.start);
+    dropped += before - c.sessions.length;
+  });
+  S.courses = S.courses.filter(c => c.sessions.length);
+  save();
+  viewWeek = currentWeek();
+  renderAll(); scheduleNotifications();
+  return dropped;
+}
+
+/* 导入面板：文件 / 粘贴二选一 */
+function openImportSheet(){
+  openSheet(
+    '<div class="sheet-hd"><h3>导入课表</h3><button class="x">×</button></div>'+
+    '<div class="sheet-bd">'+
+      '<div style="font-size:13px;color:var(--txt2);line-height:1.7;margin-bottom:14px">'+
+        '支持教务系统导出的 JSON、CSV / Excel 表格，或直接从网页复制粘贴。'+
+        '会自动识别「课程名称 / 星期 / 节次 / 周次 / 教室」等列。'+
+      '</div>'+
+      '<button class="btn line full" id="imp-file" style="margin-bottom:10px">选择文件（JSON / CSV）</button>'+
+      '<div style="font-size:12px;color:var(--txt3);text-align:center;margin:10px 0">— 或 —</div>'+
+      '<textarea id="imp-text" class="imp-textarea" placeholder="把课表内容粘贴到这里，例如：&#10;课程名称,星期,节次,周次,教室&#10;高等数学,周一,1-2,1-16,教三201"></textarea>'+
+      '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:var(--txt2)">'+
+        '<input type="checkbox" id="imp-merge"> 与现有课程合并（不勾选则覆盖）'+
+      '</label>'+
+      '<div id="imp-msg" style="font-size:12px;margin-top:10px;min-height:18px"></div>'+
+    '</div>'+
+    '<div class="sheet-ft">'+
+      '<button class="btn line" id="imp-cancel">取消</button>'+
+      '<button class="btn" id="imp-go">开始导入</button>'+
+    '</div>'
+  );
+  $("#imp-cancel").addEventListener("click",closeSheet);
+  $("#imp-file").addEventListener("click",()=>$("#import-file-input").click());
+  $("#imp-go").addEventListener("click",()=>{
+    const txt = $("#imp-text").value;
+    const merge = $("#imp-merge").checked;
+    doImportText(txt, merge);
+  });
+}
+
+function doImportText(text, merge){
+  const msg = $("#imp-msg");
+  const say = (t,color)=>{ msg.textContent = t; msg.style.color = color||"var(--txt2)"; };
+  if(!String(text||"").trim()){ say("内容为空，请先粘贴课表或选择文件","var(--danger,#E0574E)"); return; }
+  let result;
+  try{ result = parseScheduleText(text); }catch(e){ say("解析出错："+e.message,"var(--danger,#E0574E)"); return; }
+  if(!result){ say("没能识别出课表。请确认包含「课程名称」和「星期」「节次」这几列。","var(--danger,#E0574E)"); return; }
+  closeSheet();
+  const dropped = commitImport(result, merge);
+  let m = "已导入 "+result.count+" 门课程";
+  if(dropped) m += "（"+dropped+" 个课次的节次超出范围，已跳过）";
+  toast(m);
 }
 
 /* 载入预置课表。网页版靠 ?preset=xxx 触发；APK 里没有 URL 参数，由 init 直接调用。 */
