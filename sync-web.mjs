@@ -13,8 +13,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const SRC = path.resolve(HERE, "..", "class-schedule");
 const DST = path.join(HERE, "www");
+
+// 源码位置。两种布局都要支持：
+//   本地开发：class-schedule-mobile/ 和 class-schedule/ 是同级目录
+//   仓库里  ：源码在 class-schedule-mobile/web-source/ 子目录下
+// 优先取同级（本地开发时的真源），找不到就回退到子目录（克隆仓库的场景）。
+const CANDIDATES = [
+  path.resolve(HERE, "..", "class-schedule"),   // 本地开发
+  path.join(HERE, "web-source"),                // 仓库内
+];
+const SRC = CANDIDATES.find(p => existsSync(p)) || CANDIDATES[0];
 
 // 需要进 APK 的网页资源（相对源目录）
 const ALLOW = [
