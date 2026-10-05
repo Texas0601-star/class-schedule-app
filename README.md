@@ -1,9 +1,13 @@
 # 我的课表 · Android 应用
 
-把 `../class-schedule` 里那份网页课表打包成能装到手机上的 APK。
+把网页版课表打包成能装到手机上的 APK。
 
 用 [Capacitor](https://capacitorjs.com/) 做外壳：网页代码原样塞进 Android 的 WebView，
 外面套一层原生容器。好处是**同一份代码维护两处**（网页 + App），不用重写。
+
+> **网页源码在 [`web-source/`](./web-source)** —— 应用本体（`index.html`）、
+> 端到端测试、界面截图都在那里。这个仓库的根目录是 Android 打包工程，
+> 里面的 `www/` 是源码的打包副本（由 `sync-web.mjs` 自动生成，**不要手改**）。
 
 ---
 
@@ -94,7 +98,7 @@ npm run build:apk
 
 ## 改完网页之后
 
-`www/` 是从 `../class-schedule` **复制**过来的，不要手改 `www/`，会被覆盖。
+`www/` 是从 [`web-source/`](./web-source) **复制**过来的，不要手改 `www/`，会被覆盖。
 改完源目录的 `index.html` 后：
 
 ```bash
@@ -199,7 +203,7 @@ const NATIVE_DEFAULT_PRESET = "yin";   // 对应 www/preset-yin.json
 
 只在**本地一门课都没有**时才载入，不会覆盖用户自己录的课表。不想预置就设成 `""`。
 
-换课表：把新的 `preset-xxx.json` 放进 `../class-schedule/`，加进 `sync-web.mjs` 的白名单，
+换课表：把新的 `preset-xxx.json` 放进 [`web-source/`](./web-source)，加进 `sync-web.mjs` 的白名单，
 改这个常量，然后 `npm run sync`。
 
 `AndroidManifest.xml` 里加了四个权限：`POST_NOTIFICATIONS`（Android 13+ 弹通知必须申请）、
@@ -209,15 +213,20 @@ const NATIVE_DEFAULT_PRESET = "yin";   // 对应 www/preset-yin.json
 
 ## 验证状态
 
-三套自动化测试共 **61 项断言，全部通过**，零运行时异常。跑法：
+四套自动化测试共 **95 项断言，全部通过**，零运行时异常。跑法：
 
 ```bash
-cd ../class-schedule
-python -m http.server 8123 --bind 127.0.0.1 &     # 起本地服务
+cd web-source
+python -m http.server 8123 --bind 127.0.0.1 &     # e2e-focus / e2e-native-* 用这个端口
+python -m http.server 8124 --bind 127.0.0.1 &     # e2e-import 用这个端口
+node e2e-import.js           # 34 项 —— 课表导入器（CSV/TSV/JSON/单双周/越界剔除）
 node e2e-focus.js            # 20 项 —— 点课表定位高亮
 node e2e-native-bridge.js    # 11 项 —— 桥接层在浏览器里必须完全惰性
 node e2e-native-runtime.js   # 30 项 —— 注入 Capacitor 桩，真跑原生代码路径
 ```
+
+> 端口不一致时测试会全挂，报错是 `Cannot read properties of undefined (reading 'length')`
+> —— 看着像代码回归，其实是页面没加载出来。跑之前先确认端口。
 
 第三套是关键：它用 CDP 在页面脚本执行**之前**注入一个假的 `window.Capacitor`，
 把每次插件调用记进数组，然后逐条核对参数。这样「原生路径无法验证」变成了可断言：
@@ -234,7 +243,9 @@ node e2e-native-runtime.js   # 30 项 —— 注入 Capacitor 桩，真跑原生
 
 **已验证（本地实测）**
 
-- 上述 61 项断言
+- 上述 95 项断言
+- **云端构建成功**：APK 已由 GitHub Actions 编译产出并通过内容核验
+  （预置课表 16 门课 / 20 周、图标 15 张、启动图 15 张、权限 7 项齐全、包名 `com.kbschedule.app`）
 - **CI 关键路径**：删光被 `.gitignore` 排除的产物后，`cap sync android` 能全部重建
 - `package-lock.json` 与 `package.json` 同步（lockfileVersion 3，8 个依赖齐全）→ `npm ci` 不会失败
 - 工程结构一致性：插件注册表、Gradle 模块引用、包名、无残留引用
@@ -243,9 +254,6 @@ node e2e-native-runtime.js   # 30 项 —— 注入 Capacitor 桩，真跑原生
 
 **未执行**
 
-- **APK 实际编译**。本机无 JDK / Android SDK / Gradle，且实测 curl 只能访问 localhost 和部署域名 ——
-  JDK 与 Android SDK 根本下载不下来，`gradlew assembleDebug` 无法运行。
-  首次云构建可能暴露 Gradle 或依赖问题，按报错调即可。
 - **实机行为**：通知能否按时弹出、分享面板能否导入日历、返回键手感。
   桩能证明「调对了 API、传对了参数」，但证明不了「系统真的弹了通知」。
 - 部分国产 ROM 的自启动/电池优化需要用户手动设置，这一点无法通过任何测试覆盖。
